@@ -1,11 +1,847 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <title>우리 동네 인구 구조</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>우리 동네 인구 탐색기</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* 커스텀 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .fade-in {
+            animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
 </head>
-<body>
-  <h1>🏘️ 우리 동네 인구 구조</h1>
-  <p>곧 우리 동네 인구 데이터가 여기에 나타납니다! (레벨 2에서 만들어요)</p>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+    <!-- 상단 헤더 -->
+    <header class="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+                    <i class="fa-solid fa-users-viewfinder text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">대한민국 우리 동네 인구 탐색기</h1>
+                    <p id="dataDateBadge" class="text-xs text-slate-500 font-medium">행정안전부 주민등록 인구 통계</p>
+                </div>
+            </div>
+            <div id="statusIndicator" class="flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+                <span>데이터 불러오는 중...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨텐츠 컨테이너 -->
+    <main class="flex-grow max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
+
+        <!-- 오류 메시지 박스 (alert 대체) -->
+        <div id="errorBanner" class="hidden bg-red-50 border border-red-200 rounded-2xl p-5 text-red-800 shadow-sm fade-in">
+            <div class="flex items-start space-x-3">
+                <i class="fa-solid fa-triangle-exclamation text-red-500 text-xl mt-0.5"></i>
+                <div class="flex-1">
+                    <h3 class="font-bold text-sm sm:text-base">데이터를 불러오는 중 문제가 발생했습니다</h3>
+                    <p id="errorMessage" class="text-xs sm:text-sm text-red-600 mt-1 leading-relaxed"></p>
+                    <button id="retryBtn" class="mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl transition shadow-sm">
+                        다시 시도하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 검색 섹션 -->
+        <section class="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 sm:p-8 relative overflow-visible">
+            <div class="max-w-2xl mx-auto text-center space-y-3 mb-6">
+                <span class="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-600">
+                    <i class="fa-solid fa-magnifying-glass-location"></i>
+                    <span>전국 시·군·구 및 읍·면·동 실시간 검색</span>
+                </span>
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">어느 동네의 인구가 궁금하신가요?</h2>
+                <p class="text-sm text-slate-500">동네 이름을 입력하고 목록에서 선택하면 총인구와 남녀 인구 비율을 바로 확인할 수 있습니다.</p>
+            </div>
+
+            <!-- 검색창 & 자동완성 드롭다운 -->
+            <div class="max-w-xl mx-auto relative" id="searchWrapper">
+                <div class="relative flex items-center">
+                    <i class="fa-solid fa-magnifying-glass absolute left-4 text-slate-400 text-lg pointer-events-none"></i>
+                    <input
+                        type="text"
+                        id="searchInput"
+                        disabled
+                        placeholder="데이터를 준비하고 있습니다..."
+                        autocomplete="off"
+                        class="w-full pl-12 pr-24 py-4 bg-slate-50 hover:bg-slate-100/70 focus:bg-white rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:outline-none text-slate-900 font-medium placeholder-slate-400 transition-all shadow-inner text-base disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                    <button
+                        id="clearBtn"
+                        type="button"
+                        class="hidden absolute right-14 w-8 h-8 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center transition"
+                        title="검색어 지우기"
+                    >
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <button
+                        id="toggleDropdownBtn"
+                        type="button"
+                        disabled
+                        class="absolute right-3 w-10 h-10 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center transition disabled:opacity-40"
+                        title="전체 목록 보기"
+                    >
+                        <i class="fa-solid fa-chevron-down text-sm transition-transform duration-200" id="dropdownArrow"></i>
+                    </button>
+                </div>
+
+                <!-- 검색 결과 드롭다운 목록 -->
+                <div
+                    id="dropdownMenu"
+                    class="hidden absolute left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-200 max-h-80 overflow-y-auto z-40 divide-y divide-slate-100"
+                >
+                    <!-- 자바스크립트로 동적 렌더링 -->
+                </div>
+            </div>
+
+            <!-- 빠른 추천 태그 -->
+            <div id="quickTagsContainer" class="max-w-xl mx-auto mt-4 flex flex-wrap items-center justify-center gap-2 opacity-0 transition-opacity duration-300">
+                <span class="text-xs font-semibold text-slate-400 mr-1"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>빠른 선택:</span>
+                <div id="quickTagsList" class="flex flex-wrap gap-1.5 justify-center"></div>
+            </div>
+        </section>
+
+        <!-- 로딩 스켈레톤 -->
+        <section id="loadingSkeleton" class="space-y-6">
+            <div class="bg-white rounded-3xl p-8 border border-slate-200 animate-pulse space-y-6">
+                <div class="h-7 bg-slate-200 rounded-lg w-1/3"></div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div class="h-36 bg-slate-100 rounded-2xl"></div>
+                    <div class="h-36 bg-slate-100 rounded-2xl"></div>
+                    <div class="h-36 bg-slate-100 rounded-2xl"></div>
+                </div>
+                <div class="h-16 bg-slate-100 rounded-2xl"></div>
+            </div>
+        </section>
+
+        <!-- 인구 결과 대시보드 -->
+        <section id="resultSection" class="hidden space-y-6 fade-in">
+            
+            <!-- 선택된 지역 헤더 카드 -->
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 sm:p-8">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+                    <div class="space-y-1">
+                        <div class="flex items-center space-x-2 text-indigo-600 text-xs font-bold uppercase tracking-wider">
+                            <i class="fa-solid fa-location-dot"></i>
+                            <span id="regionLevelBadge">선택된 행정구역</span>
+                        </div>
+                        <h3 id="selectedRegionName" class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight break-keep">
+                            서울특별시
+                        </h3>
+                    </div>
+                    <div class="flex items-center space-x-2 self-start sm:self-center">
+                        <span id="referenceMonthText" class="px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold">
+                            기준월: 확인 중
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 3대 핵심 지표 카드 (총인구, 남자 인구, 여자 인구) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
+                    
+                    <!-- 총인구 카드 -->
+                    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-6 shadow-md flex flex-col justify-between">
+                        <div class="absolute -right-4 -bottom-4 opacity-10 text-8xl pointer-events-none">
+                            <i class="fa-solid fa-people-group"></i>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold uppercase tracking-wider text-indigo-200 bg-white/10 px-3 py-1 rounded-full">총인구</span>
+                            <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-indigo-300">
+                                <i class="fa-solid fa-users text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <div class="flex items-baseline space-x-1.5">
+                                <span id="totalPopValue" class="text-3xl sm:text-4xl font-black tracking-tight">0</span>
+                                <span class="text-base font-semibold text-slate-300">명</span>
+                            </div>
+                            <p id="totalPopSubtext" class="text-xs text-slate-300 mt-2 font-medium">남녀 합산 전체 주민등록 인구</p>
+                        </div>
+                    </div>
+
+                    <!-- 남자 인구 카드 -->
+                    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50/60 border border-blue-200/80 p-6 shadow-sm flex flex-col justify-between">
+                        <div class="absolute -right-3 -bottom-3 opacity-5 text-8xl text-blue-900 pointer-events-none">
+                            <i class="fa-solid fa-person"></i>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-100/80 px-3 py-1 rounded-full">남자 인구</span>
+                            <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shadow-blue-200">
+                                <i class="fa-solid fa-mars text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <div class="flex items-baseline space-x-1.5">
+                                <span id="malePopValue" class="text-3xl sm:text-4xl font-black text-blue-950 tracking-tight">0</span>
+                                <span class="text-base font-semibold text-blue-700">명</span>
+                            </div>
+                            <div class="mt-2 flex items-center space-x-2">
+                                <span id="maleRatioBadge" class="inline-block text-xs font-bold text-blue-700 bg-white px-2.5 py-0.5 rounded-md border border-blue-200">0.0%</span>
+                                <span class="text-xs text-slate-500">전체 대비 비율</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 여자 인구 카드 -->
+                    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50/60 border border-rose-200/80 p-6 shadow-sm flex flex-col justify-between">
+                        <div class="absolute -right-3 -bottom-3 opacity-5 text-8xl text-rose-900 pointer-events-none">
+                            <i class="fa-solid fa-person-dress"></i>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold uppercase tracking-wider text-rose-700 bg-rose-100/80 px-3 py-1 rounded-full">여자 인구</span>
+                            <div class="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-sm shadow-rose-200">
+                                <i class="fa-solid fa-venus text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <div class="flex items-baseline space-x-1.5">
+                                <span id="femalePopValue" class="text-3xl sm:text-4xl font-black text-rose-950 tracking-tight">0</span>
+                                <span class="text-base font-semibold text-rose-700">명</span>
+                            </div>
+                            <div class="mt-2 flex items-center space-x-2">
+                                <span id="femaleRatioBadge" class="inline-block text-xs font-bold text-rose-700 bg-white px-2.5 py-0.5 rounded-md border border-rose-200">0.0%</span>
+                                <span class="text-xs text-slate-500">전체 대비 비율</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 남녀 성비 시각화 바 -->
+                <div class="mt-8 pt-6 border-t border-slate-100">
+                    <div class="flex items-center justify-between text-xs sm:text-sm font-bold mb-2.5">
+                        <div class="flex items-center space-x-2 text-blue-600">
+                            <i class="fa-solid fa-mars"></i>
+                            <span>남성 <span id="barMalePercent">50.0%</span></span>
+                        </div>
+                        <div id="genderDiffText" class="text-slate-600 font-semibold text-xs bg-slate-100 px-3 py-1 rounded-full">
+                            성비 균형
+                        </div>
+                        <div class="flex items-center space-x-2 text-rose-500">
+                            <span>여성 <span id="barFemalePercent">50.0%</span></span>
+                            <i class="fa-solid fa-venus"></i>
+                        </div>
+                    </div>
+                    <div class="w-full h-4 bg-slate-100 rounded-full overflow-hidden flex p-0.5 border border-slate-200/70">
+                        <div id="maleProgressBar" class="bg-gradient-to-r from-blue-600 to-blue-500 h-full rounded-l-full transition-all duration-500" style="width: 50%"></div>
+                        <div id="femaleProgressBar" class="bg-gradient-to-r from-rose-400 to-rose-500 h-full rounded-r-full transition-all duration-500" style="width: 50%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 보너스: 10세 단위 연령대별 남녀 인구 분포 (접기/펼치기 가능) -->
+            <div id="ageDistributionCard" class="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 sm:p-8">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+                    <div>
+                        <h4 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-column text-indigo-600"></i>
+                            <span>연령대별 남녀 인구 구성</span>
+                        </h4>
+                        <p class="text-xs text-slate-500 mt-0.5">선택한 동네의 연령별 데이터(0세~100세 이상)를 10세 단위로 집계한 분포입니다.</p>
+                    </div>
+                    <div class="flex items-center space-x-4 text-xs font-semibold">
+                        <span class="flex items-center gap-1.5 text-blue-600"><span class="w-3 h-3 rounded-sm bg-blue-500 inline-block"></span>남자</span>
+                        <span class="flex items-center gap-1.5 text-rose-500"><span class="w-3 h-3 rounded-sm bg-rose-500 inline-block"></span>여자</span>
+                    </div>
+                </div>
+                <div id="ageChartContainer" class="space-y-3">
+                    <!-- 자바스크립트로 연령대 바 차트 렌더링 -->
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- 하단 푸터 -->
+    <footer class="bg-white border-t border-slate-200/80 py-6 mt-12">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+            <p>데이터 출처: 행정안전부 주민등록 인구 및 세대현황 (`population_latest.csv`)</p>
+            <p class="text-slate-400">EUC-KR 자동 디코딩 · 괄호 행정코드 제거 적용됨</p>
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * 데이터 URL 및 전역 상태 관리
+         */
+        const CSV_URL = 'https://raw.githubusercontent.com/greatsong/modudata/main/data/population_latest.csv';
+
+        const state = {
+            regions: [],          // 파싱된 전체 동네 데이터 목록
+            referenceDate: '',    // 데이터 기준 연월 (예: "2026년 09월")
+            selectedRegion: null, // 현재 선택된 동네 객체
+            filteredRegions: [],  // 검색어로 필터링된 동네 목록
+            isDropdownOpen: false
+        };
+
+        /**
+         * DOM 요소 참조
+         */
+        const els = {
+            statusIndicator: document.getElementById('statusIndicator'),
+            dataDateBadge: document.getElementById('dataDateBadge'),
+            errorBanner: document.getElementById('errorBanner'),
+            errorMessage: document.getElementById('errorMessage'),
+            retryBtn: document.getElementById('retryBtn'),
+            searchWrapper: document.getElementById('searchWrapper'),
+            searchInput: document.getElementById('searchInput'),
+            clearBtn: document.getElementById('clearBtn'),
+            toggleDropdownBtn: document.getElementById('toggleDropdownBtn'),
+            dropdownArrow: document.getElementById('dropdownArrow'),
+            dropdownMenu: document.getElementById('dropdownMenu'),
+            quickTagsContainer: document.getElementById('quickTagsContainer'),
+            quickTagsList: document.getElementById('quickTagsList'),
+            loadingSkeleton: document.getElementById('loadingSkeleton'),
+            resultSection: document.getElementById('resultSection'),
+            regionLevelBadge: document.getElementById('regionLevelBadge'),
+            selectedRegionName: document.getElementById('selectedRegionName'),
+            referenceMonthText: document.getElementById('referenceMonthText'),
+            totalPopValue: document.getElementById('totalPopValue'),
+            totalPopSubtext: document.getElementById('totalPopSubtext'),
+            malePopValue: document.getElementById('malePopValue'),
+            maleRatioBadge: document.getElementById('maleRatioBadge'),
+            femalePopValue: document.getElementById('femalePopValue'),
+            femaleRatioBadge: document.getElementById('femaleRatioBadge'),
+            barMalePercent: document.getElementById('barMalePercent'),
+            barFemalePercent: document.getElementById('barFemalePercent'),
+            genderDiffText: document.getElementById('genderDiffText'),
+            maleProgressBar: document.getElementById('maleProgressBar'),
+            femaleProgressBar: document.getElementById('femaleProgressBar'),
+            ageDistributionCard: document.getElementById('ageDistributionCard'),
+            ageChartContainer: document.getElementById('ageChartContainer')
+        };
+
+        /**
+         * 1. CSV 한 줄을 안전하게 파싱하는 함수
+         * 큰따옴표로 감싸진 숫자("9,289,813") 내부의 쉼표는 구분자로 처리하지 않도록 상태 머신 방식으로 분리합니다.
+         */
+        function parseCSVLine(line) {
+            const fields = [];
+            let currentField = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    fields.push(currentField.trim());
+                    currentField = '';
+                } else {
+                    currentField += char;
+                }
+            }
+            fields.push(currentField.trim());
+            return fields;
+        }
+
+        /**
+         * 2. 쉼표가 포함된 문자열 숫자를 정수로 변환하는 함수 (예: "9,289,813" -> 9289813)
+         */
+        function parseNumber(val) {
+            if (!val) return 0;
+            const cleaned = String(val).replace(/,/g, '').replace(/"/g, '').trim();
+            const num = parseInt(cleaned, 10);
+            return isNaN(num) ? 0 : num;
+        }
+
+        /**
+         * 3. 지역 이름 뒤의 괄호와 기관코드 숫자를 제거하는 함수
+         * 예: "서울특별시  (1100000000)" -> "서울특별시"
+         * 예: "서울특별시 종로구 청운효자동(1111051500)" -> "서울특별시 종로구 청운효자동"
+         */
+        function cleanRegionName(rawName) {
+            if (!rawName) return '';
+            return rawName
+                .replace(/"/g, '')
+                .replace(/\s*\([0-9]*\)\s*$/, '') // 끝에 붙은 괄호+숫자 제거
+                .replace(/\s+/g, ' ')             // 연속된 공백을 하나로 정리
+                .trim();
+        }
+
+        /**
+         * 4. CSV 데이터를 다운로드하고 EUC-KR로 디코딩한 뒤 구조화하는 함수
+         */
+        async function loadPopulationData() {
+            try {
+                // UI 초기화
+                els.errorBanner.classList.add('hidden');
+                els.loadingSkeleton.classList.remove('hidden');
+                els.resultSection.classList.add('hidden');
+                els.statusIndicator.className = 'flex items-center space-x-2 text-xs font-medium px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200';
+                els.statusIndicator.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>데이터 불러오는 중...</span>';
+
+                const response = await fetch(CSV_URL);
+                if (!response.ok) {
+                    throw new Error(`서버 응답 오류 (HTTP ${response.status})`);
+                }
+
+                // 원본 파일이 EUC-KR로 인코딩되어 있으므로 ArrayBuffer로 받아 TextDecoder('euc-kr')로 디코딩
+                const buffer = await response.arrayBuffer();
+                const decoder = new TextDecoder('euc-kr');
+                const decodedText = decoder.decode(buffer);
+
+                // 줄 단위로 분리
+                const lines = decodedText.split(/\r?\n/).filter(line => line.trim().length > 0);
+                if (lines.length < 2) {
+                    throw new Error('CSV 파일에 유효한 데이터가 없습니다.');
+                }
+
+                // 첫 번째 줄(헤더) 분석
+                const headers = parseCSVLine(lines[0]);
+
+                // 열 이름에서 기준 연월 추출 (예: "2026년09월_남_총인구수" -> "2026년 09월")
+                let refMonth = '최신 기준';
+                for (const h of headers) {
+                    const match = h.match(/(\d{4}년)\s*(\d{1,2}월)/);
+                    if (match) {
+                        refMonth = `${match[1]} ${match[2]}`;
+                        break;
+                    }
+                }
+                state.referenceDate = refMonth;
+
+                // 주요 열 인덱스 동적 탐색
+                let regionColIdx = 0;
+                let totalPopColIdx = -1;
+                let malePopColIdx = -1;
+                let femalePopColIdx = -1;
+
+                // 연령별 열 인덱스 매핑 (남/여 0~100세 이상)
+                const maleAgeCols = [];
+                const femaleAgeCols = [];
+
+                headers.forEach((headerName, idx) => {
+                    const cleanHeader = headerName.replace(/"/g, '').trim();
+
+                    if (cleanHeader.includes('행정구역')) {
+                        regionColIdx = idx;
+                    } else if (cleanHeader.includes('_계_총인구수')) {
+                        totalPopColIdx = idx;
+                    } else if (cleanHeader.includes('_남_총인구수')) {
+                        malePopColIdx = idx;
+                    } else if (cleanHeader.includes('_여_총인구수')) {
+                        femalePopColIdx = idx;
+                    } else {
+                        // 연령별 열 확인 (예: "2026년09월_남_5세", "2026년09월_여_100세 이상")
+                        const maleAgeMatch = cleanHeader.match(/_남_(\d+)세/);
+                        if (maleAgeMatch) {
+                            maleAgeCols.push({ age: parseInt(maleAgeMatch[1], 10), idx });
+                        }
+                        const femaleAgeMatch = cleanHeader.match(/_여_(\d+)세/);
+                        if (femaleAgeMatch) {
+                            femaleAgeCols.push({ age: parseInt(femaleAgeMatch[1], 10), idx });
+                        }
+                    }
+                });
+
+                // 만약 헤더 패턴이 예상과 다를 경우 위치 기반 폴백 처리
+                if (malePopColIdx === -1 || femalePopColIdx === -1) {
+                    throw new Error('총인구수 또는 남녀 인구수 열을 찾을 수 없습니다.');
+                }
+
+                // 각 행 파싱
+                const parsedRegions = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = parseCSVLine(lines[i]);
+                    if (cols.length <= Math.max(malePopColIdx, femalePopColIdx)) continue;
+
+                    const name = cleanRegionName(cols[regionColIdx]);
+                    if (!name) continue;
+
+                    const male = parseNumber(cols[malePopColIdx]);
+                    const female = parseNumber(cols[femalePopColIdx]);
+                    // 총인구수 열이 있으면 사용하고, 없으면 남+여 합산으로 계산
+                    const total = totalPopColIdx !== -1 ? parseNumber(cols[totalPopColIdx]) : (male + female);
+
+                    // 총인구가 0명인 비활성 코드 행은 제외하거나 유지 (0명 이상 모두 포함하되 의미 있는 데이터 유지)
+                    if (total === 0 && male === 0 && female === 0) continue;
+
+                    // 10세 단위 연령대별 집계 (0~9세, 10~19세, ..., 80세 이상)
+                    const ageGroups = [
+                        { label: '0~9세', male: 0, female: 0 },
+                        { label: '10대', male: 0, female: 0 },
+                        { label: '20대', male: 0, female: 0 },
+                        { label: '30대', male: 0, female: 0 },
+                        { label: '40대', male: 0, female: 0 },
+                        { label: '50대', male: 0, female: 0 },
+                        { label: '60대', male: 0, female: 0 },
+                        { label: '70대', male: 0, female: 0 },
+                        { label: '80세 이상', male: 0, female: 0 }
+                    ];
+
+                    if (maleAgeCols.length > 0 && femaleAgeCols.length > 0) {
+                        for (const mCol of maleAgeCols) {
+                            const bucket = Math.min(Math.floor(mCol.age / 10), 8);
+                            ageGroups[bucket].male += parseNumber(cols[mCol.idx]);
+                        }
+                        for (const fCol of femaleAgeCols) {
+                            const bucket = Math.min(Math.floor(fCol.age / 10), 8);
+                            ageGroups[bucket].female += parseNumber(cols[fCol.idx]);
+                        }
+                    }
+
+                    parsedRegions.push({
+                        id: i,
+                        name,
+                        total,
+                        male,
+                        female,
+                        ageGroups
+                    });
+                }
+
+                state.regions = parsedRegions;
+                state.filteredRegions = parsedRegions;
+
+                // 상단 상태 배지 업데이트
+                els.statusIndicator.className = 'flex items-center space-x-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200';
+                els.statusIndicator.innerHTML = `<i class="fa-solid fa-circle-check"></i><span>총 ${parsedRegions.length.toLocaleString()}개 동네 준비 완료</span>`;
+                els.dataDateBadge.textContent = `행정안전부 주민등록 인구 통계 (${state.referenceDate} 기준)`;
+
+                // 검색창 활성화
+                els.searchInput.disabled = false;
+                els.toggleDropdownBtn.disabled = false;
+                els.searchInput.placeholder = '동네 이름 검색 (예: 종로구, 역삼1동, 해운대구, 제주특별자치도...)';
+
+                // 빠른 추천 동네 태그 렌더링
+                renderQuickTags();
+
+                // 초기 기본 동네 선택 (첫 번째 항목 또는 서울특별시)
+                if (parsedRegions.length > 0) {
+                    selectRegion(parsedRegions[0]);
+                }
+
+                els.loadingSkeleton.classList.add('hidden');
+                els.resultSection.classList.remove('hidden');
+
+            } catch (error) {
+                console.error(error);
+                els.loadingSkeleton.classList.add('hidden');
+                els.errorBanner.classList.remove('hidden');
+                els.errorMessage.textContent = error.message || '네트워크 연결 상태를 확인해 주세요.';
+                els.statusIndicator.className = 'flex items-center space-x-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-red-50 text-red-700 border border-red-200';
+                els.statusIndicator.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i><span>데이터 로드 실패</span>';
+            }
+        }
+
+        /**
+         * 5. 빠른 선택 추천 태그 생성
+         */
+        function renderQuickTags() {
+            const sampleKeywords = ['서울특별시', '종로구', '강남구', '해운대구', '성남시 분당구', '수원시', '세종특별자치시', '제주특별자치도'];
+            const matchedSamples = [];
+
+            for (const kw of sampleKeywords) {
+                const exactOrPartial = state.regions.find(r => r.name === kw || r.name.endsWith(' ' + kw));
+                if (exactOrPartial) {
+                    matchedSamples.push(exactOrPartial);
+                }
+            }
+
+            els.quickTagsList.innerHTML = '';
+            matchedSamples.slice(0, 6).forEach(region => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'px-3 py-1 text-xs font-medium rounded-full bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200/80 hover:border-indigo-200 transition';
+                btn.textContent = region.name;
+                btn.addEventListener('click', () => {
+                    els.searchInput.value = region.name;
+                    els.clearBtn.classList.remove('hidden');
+                    selectRegion(region);
+                    closeDropdown();
+                });
+                els.quickTagsList.appendChild(btn);
+            });
+
+            els.quickTagsContainer.classList.remove('opacity-0');
+        }
+
+        /**
+         * 6. 검색어에 따라 드롭다운 목록을 렌더링하는 함수
+         */
+        function renderDropdown(query = '') {
+            const trimmedQuery = query.trim().toLowerCase();
+            const keywords = trimmedQuery.split(/\s+/).filter(Boolean);
+
+            if (keywords.length === 0) {
+                state.filteredRegions = state.regions;
+            } else {
+                // 여러 단어 입력 시(예: "서울 강남") 모든 단어가 포함된 지역 필터링
+                state.filteredRegions = state.regions.filter(region => {
+                    const target = region.name.toLowerCase();
+                    return keywords.every(kw => target.includes(kw));
+                });
+            }
+
+            els.dropdownMenu.innerHTML = '';
+
+            if (state.filteredRegions.length === 0) {
+                els.dropdownMenu.innerHTML = `
+                    <div class="p-8 text-center text-slate-400">
+                        <i class="fa-regular fa-face-sad-tear text-2xl mb-2 block"></i>
+                        <p class="text-sm font-medium text-slate-600">"${query}"에 해당하는 동네를 찾지 못했습니다.</p>
+                        <p class="text-xs text-slate-400 mt-1">시·군·구 또는 읍·면·동 이름을 다시 확인해 보세요.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 브라우저 렌더링 성능을 위해 최대 100개까지 표시하고 안내 문구 제공
+            const maxDisplay = 100;
+            const listToDisplay = state.filteredRegions.slice(0, maxDisplay);
+
+            listToDisplay.forEach(region => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                const isSelected = state.selectedRegion && state.selectedRegion.id === region.id;
+
+                item.className = `w-full text-left px-5 py-3.5 hover:bg-indigo-50/70 flex items-center justify-between transition group ${
+                    isSelected ? 'bg-indigo-50/90 font-semibold text-indigo-700' : 'text-slate-700'
+                }`;
+
+                // 검색어 하이라이트 처리
+                let highlightedName = region.name;
+                if (keywords.length > 0) {
+                    keywords.forEach(kw => {
+                        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`(${escaped})`, 'gi');
+                        highlightedName = highlightedName.replace(regex, '<mark class="bg-amber-200/80 text-slate-900 rounded px-0.5">$1</mark>');
+                    });
+                }
+
+                item.innerHTML = `
+                    <div class="flex items-center space-x-2.5 pr-4">
+                        <i class="fa-solid fa-location-dot text-xs ${isSelected ? 'text-indigo-600' : 'text-slate-300 group-hover:text-indigo-400'}"></i>
+                        <span class="text-sm sm:text-base break-keep">${highlightedName}</span>
+                    </div>
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded-lg ${
+                        isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-white'
+                    } shrink-0">
+                        ${region.total.toLocaleString()}명
+                    </span>
+                `;
+
+                item.addEventListener('click', () => {
+                    els.searchInput.value = region.name;
+                    els.clearBtn.classList.remove('hidden');
+                    selectRegion(region);
+                    closeDropdown();
+                });
+
+                els.dropdownMenu.appendChild(item);
+            });
+
+            if (state.filteredRegions.length > maxDisplay) {
+                const moreNotice = document.createElement('div');
+                moreNotice.className = 'px-5 py-3 bg-slate-50 text-center text-xs text-slate-500 font-medium';
+                moreNotice.textContent = `검색 결과 ${state.filteredRegions.length.toLocaleString()}개 중 상위 ${maxDisplay}개만 표시됩니다. 검색어를 더 입력해 주세요.`;
+                els.dropdownMenu.appendChild(moreNotice);
+            }
+        }
+
+        /**
+         * 7. 특정 동네를 선택했을 때 화면에 총인구, 남자 인구, 여자 인구를 업데이트하는 함수
+         */
+        function selectRegion(region) {
+            state.selectedRegion = region;
+
+            // 행정구역 단계 표시 (공백 개수로 시/도, 시/군/구, 읍/면/동 구분)
+            const depth = region.name.split(' ').length;
+            let levelText = '행정구역';
+            if (depth === 1) levelText = '광역자치단체 (시·도)';
+            else if (depth === 2) levelText = '기초자치단체 (시·군·구)';
+            else if (depth >= 3) levelText = '읍·면·동 단위 우리 동네';
+
+            els.regionLevelBadge.textContent = levelText;
+            els.selectedRegionName.textContent = region.name;
+            els.referenceMonthText.textContent = `${state.referenceDate} 기준`;
+
+            // 숫자 포맷팅 (천 단위 쉼표)
+            els.totalPopValue.textContent = region.total.toLocaleString('ko-KR');
+            els.malePopValue.textContent = region.male.toLocaleString('ko-KR');
+            els.femalePopValue.textContent = region.female.toLocaleString('ko-KR');
+
+            // 남녀 비율 계산
+            const total = region.total > 0 ? region.total : 1;
+            const malePercent = ((region.male / total) * 100).toFixed(1);
+            const femalePercent = ((region.female / total) * 100).toFixed(1);
+
+            els.maleRatioBadge.textContent = `${malePercent}%`;
+            els.femaleRatioBadge.textContent = `${femalePercent}%`;
+            els.barMalePercent.textContent = `${malePercent}%`;
+            els.barFemalePercent.textContent = `${femalePercent}%`;
+
+            els.maleProgressBar.style.width = `${malePercent}%`;
+            els.femaleProgressBar.style.width = `${femalePercent}%`;
+
+            // 남녀 인구수 차이 설명 문구
+            const diff = Math.abs(region.male - region.female).toLocaleString('ko-KR');
+            if (region.male > region.female) {
+                els.genderDiffText.innerHTML = `<span class="text-blue-600 font-bold">남자</span> 인구가 <span class="font-bold text-slate-800">${diff}명</span> 더 많아요`;
+            } else if (region.female > region.male) {
+                els.genderDiffText.innerHTML = `<span class="text-rose-500 font-bold">여자</span> 인구가 <span class="font-bold text-slate-800">${diff}명</span> 더 많아요`;
+            } else {
+                els.genderDiffText.textContent = '남녀 인구수가 정확히 같아요';
+            }
+
+            // 연령대별 차트 렌더링
+            renderAgeDistribution(region);
+        }
+
+        /**
+         * 8. 연령대별 남녀 인구 분포 차트 렌더링
+         */
+        function renderAgeDistribution(region) {
+            if (!region.ageGroups || region.ageGroups.length === 0) {
+                els.ageDistributionCard.classList.add('hidden');
+                return;
+            }
+
+            els.ageDistributionCard.classList.remove('hidden');
+            els.ageChartContainer.innerHTML = '';
+
+            // 가장 인구가 많은 연령대 기준으로 막대 길이 정규화
+            const maxGroupSum = Math.max(...region.ageGroups.map(g => g.male + g.female), 1);
+
+            region.ageGroups.forEach(group => {
+                const groupTotal = group.male + group.female;
+                const maleWidth = ((group.male / maxGroupSum) * 100).toFixed(1);
+                const femaleWidth = ((group.female / maxGroupSum) * 100).toFixed(1);
+                const groupShare = region.total > 0 ? ((groupTotal / region.total) * 100).toFixed(1) : '0.0';
+
+                const row = document.createElement('div');
+                row.className = 'grid grid-cols-12 items-center gap-2 sm:gap-4 text-xs sm:text-sm py-1';
+                row.innerHTML = `
+                    <div class="col-span-3 sm:col-span-2 font-bold text-slate-700">${group.label}</div>
+                    <div class="col-span-6 sm:col-span-7 flex items-center h-6 bg-slate-100 rounded-lg overflow-hidden p-0.5">
+                        <div class="bg-blue-500 h-full rounded-l-md transition-all duration-500" style="width: ${maleWidth}%" title="남자: ${group.male.toLocaleString()}명"></div>
+                        <div class="bg-rose-400 h-full rounded-r-md transition-all duration-500" style="width: ${femaleWidth}%" title="여자: ${group.female.toLocaleString()}명"></div>
+                    </div>
+                    <div class="col-span-3 sm:col-span-3 text-right">
+                        <span class="font-bold text-slate-800">${groupTotal.toLocaleString()}명</span>
+                        <span class="hidden sm:inline-block text-xs text-slate-400 ml-1">(${groupShare}%)</span>
+                    </div>
+                `;
+                els.ageChartContainer.appendChild(row);
+            });
+        }
+
+        /**
+         * 드롭다운 열기 / 닫기 제어
+         */
+        function openDropdown() {
+            state.isDropdownOpen = true;
+            els.dropdownMenu.classList.remove('hidden');
+            els.dropdownArrow.classList.add('rotate-180');
+        }
+
+        function closeDropdown() {
+            state.isDropdownOpen = false;
+            els.dropdownMenu.classList.add('hidden');
+            els.dropdownArrow.classList.remove('rotate-180');
+        }
+
+        /**
+         * 이벤트 리스너 바인딩
+         */
+        els.searchInput.addEventListener('focus', () => {
+            renderDropdown(els.searchInput.value);
+            openDropdown();
+        });
+
+        els.searchInput.addEventListener('input', (e) => {
+            const val = e.target.value;
+            if (val.length > 0) {
+                els.clearBtn.classList.remove('hidden');
+            } else {
+                els.clearBtn.classList.add('hidden');
+            }
+            renderDropdown(val);
+            openDropdown();
+        });
+
+        els.searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (state.filteredRegions.length > 0) {
+                    const topMatch = state.filteredRegions[0];
+                    els.searchInput.value = topMatch.name;
+                    els.clearBtn.classList.remove('hidden');
+                    selectRegion(topMatch);
+                    closeDropdown();
+                    els.searchInput.blur();
+                }
+            } else if (e.key === 'Escape') {
+                closeDropdown();
+            }
+        });
+
+        els.clearBtn.addEventListener('click', () => {
+            els.searchInput.value = '';
+            els.clearBtn.classList.add('hidden');
+            renderDropdown('');
+            openDropdown();
+            els.searchInput.focus();
+        });
+
+        els.toggleDropdownBtn.addEventListener('click', () => {
+            if (state.isDropdownOpen) {
+                closeDropdown();
+            } else {
+                renderDropdown(els.searchInput.value);
+                openDropdown();
+                els.searchInput.focus();
+            }
+        });
+
+        // 검색 영역 외부 클릭 시 드롭다운 닫기
+        document.addEventListener('click', (e) => {
+            if (!els.searchWrapper.contains(e.target)) {
+                closeDropdown();
+            }
+        });
+
+        // 다시 시도 버튼
+        els.retryBtn.addEventListener('click', loadPopulationData);
+
+        // 페이지 로드 시 데이터 가져오기 실행
+        window.addEventListener('DOMContentLoaded', loadPopulationData);
+    </script>
 </body>
 </html>
